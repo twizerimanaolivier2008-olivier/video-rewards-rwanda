@@ -206,7 +206,11 @@ export const getPlatformStats = async (req, res) => {
     const totalViewsResult = await pool.query('SELECT SUM(current_views) as total_views FROM videos');
     const totalViews = totalViewsResult[0].total_views || 0;
 
-    const pendingWithdrawals = await Withdrawal.getCount();
+    const pendingWithdrawalsResult = await pool.query(
+      'SELECT COUNT(*) as pending_count FROM withdrawals WHERE status = ?',
+      ['pending']
+    );
+    const pendingWithdrawals = pendingWithdrawalsResult[0].pending_count || 0;
     const withdrawalsResult = await pool.query('SELECT SUM(amount) as total_amount FROM withdrawals WHERE status = "completed"');
     const totalWithdrawn = withdrawalsResult[0].total_amount || 0;
 

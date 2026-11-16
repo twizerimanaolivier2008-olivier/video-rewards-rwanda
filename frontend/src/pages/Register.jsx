@@ -1,25 +1,25 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useToast } from '../components/Toast'
 import { register } from '../utils/auth'
 import './Auth.css'
 
 const getPasswordStrength = (password) => {
   let score = 0
-  if (password.length >= 6) score++
-  if (password.length >= 10) score++
+  if (password.length >= 8) score++
   if (/[A-Z]/.test(password)) score++
   if (/[a-z]/.test(password)) score++
   if (/[0-9]/.test(password)) score++
   if (/[^A-Za-z0-9]/.test(password)) score++
-  if (score <= 2) return { level: 'weak', label: 'Weak', colorClass: 'weak' }
-  if (score <= 3) return { level: 'fair', label: 'Fair', colorClass: 'fair' }
-  if (score <= 4) return { level: 'good', label: 'Good', colorClass: 'good' }
-  return { level: 'strong', label: 'Strong', colorClass: 'strong' }
+  if (score <= 2) return { level: 'weak', label: 'Weak', colorClass: 'weak', score }
+  if (score === 3) return { level: 'fair', label: 'Fair', colorClass: 'fair', score }
+  if (score === 4) return { level: 'good', label: 'Good', colorClass: 'good', score }
+  return { level: 'strong', label: 'Strong', colorClass: 'strong', score }
 }
 
 const Register = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { success, error } = useToast()
   const [formData, setFormData] = useState({
     firstName: '',
@@ -28,7 +28,7 @@ const Register = () => {
     phone: '',
     password: '',
     confirmPassword: '',
-    referralCode: '',
+    referralCode: searchParams.get('ref') || '',
     agreeTerms: false,
   })
   const [errors, setErrors] = useState({})
@@ -66,12 +66,14 @@ const Register = () => {
 
     if (!formData.password) {
       newErrors.password = 'Password is required'
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters'
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters'
     }
 
-    if (formData.password !== formData.confirmPassword) {
+    if (formData.confirmPassword && formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match'
+    } else if (!formData.confirmPassword) {
+      newErrors.confirmPassword = 'Please confirm your password'
     }
 
     if (!formData.agreeTerms) {
@@ -103,7 +105,12 @@ const Register = () => {
 
     try {
       const { confirmPassword, agreeTerms, ...registerData } = formData
-      await register(registerData)
+      await register({
+        ...registerData,
+        email: registerData.email.trim().toLowerCase(),
+        phone: registerData.phone.trim(),
+        referralCode: registerData.referralCode.trim(),
+      })
       success('Account created successfully! Redirecting...')
       setTimeout(() => {
         navigate('/dashboard')
@@ -119,14 +126,25 @@ const Register = () => {
 
   return (
     <div className="auth-page">
+      <section className="auth-story" aria-label="About Video Rewards Rwanda">
+        <span className="auth-eyebrow">Your next chapter starts here</span>
+        <h2>Join in. Watch. Earn.</h2>
+        <p>Create your account to explore videos, follow your rewards, and invite friends to join the community.</p>
+        <ul className="auth-benefits">
+          <li><span className="auth-benefit-check" aria-hidden="true">✓</span>A personal dashboard for your activity</li>
+          <li><span className="auth-benefit-check" aria-hidden="true">✓</span>Referral tools to share with friends</li>
+          <li><span className="auth-benefit-check" aria-hidden="true">✓</span>Secure sign-in and account controls</li>
+        </ul>
+      </section>
+
       <div className="auth-card">
         <div className="auth-header">
-          <div className="auth-logo">VR</div>
+          <div className="auth-brand"><div className="auth-logo">VR</div><span>Video Rewards Rwanda</span></div>
           <h1 className="auth-title">Create Account</h1>
-          <p className="auth-subtitle">Join Video Rewards Rwanda and start earning</p>
+          <p className="auth-subtitle">A few details and you’re ready to get started.</p>
         </div>
 
-        {submitError && <div className="auth-error-banner">{submitError}</div>}
+        {submitError && <div className="auth-error-banner" role="alert">{submitError}</div>}
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <div className="form-row">
@@ -141,6 +159,7 @@ const Register = () => {
                 onChange={handleChange}
                 placeholder="John"
                 autoComplete="given-name"
+                aria-invalid={Boolean(errors.firstName)}
               />
               {errors.firstName && <span className="form-error">{errors.firstName}</span>}
             </div>
@@ -155,6 +174,7 @@ const Register = () => {
                 onChange={handleChange}
                 placeholder="Doe"
                 autoComplete="family-name"
+                aria-invalid={Boolean(errors.lastName)}
               />
               {errors.lastName && <span className="form-error">{errors.lastName}</span>}
             </div>
@@ -171,6 +191,7 @@ const Register = () => {
               onChange={handleChange}
               placeholder="john@example.com"
               autoComplete="email"
+              aria-invalid={Boolean(errors.email)}
             />
             {errors.email && <span className="form-error">{errors.email}</span>}
           </div>
@@ -186,8 +207,25 @@ const Register = () => {
               onChange={handleChange}
               placeholder="+250 788 123 456"
               autoComplete="tel"
+              aria-invalid={Boolean(errors.phone)}
             />
             {errors.phone && <span className="form-error">{errors.phone}</span>}
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="referralCode" className="form-label">Referral code <span className="form-hint">(optional)</span></label>
+            <input
+              type="text"
+              id="referralCode"
+              name="referralCode"
+              className={`form-input ${errors.referralCode ? 'error' : ''}`}
+              value={formData.referralCode}
+              onChange={handleChange}
+              placeholder="Enter a friend's code"
+              autoComplete="off"
+              aria-invalid={Boolean(errors.referralCode)}
+            />
+            {errors.referralCode && <span className="form-error">{errors.referralCode}</span>}
           </div>
 
           <div className="form-group">
@@ -200,26 +238,27 @@ const Register = () => {
                 className={`form-input ${errors.password ? 'error' : ''}`}
                 value={formData.password}
                 onChange={handleChange}
-                placeholder="Minimum 6 characters"
+                placeholder="At least 8 characters"
                 autoComplete="new-password"
+                aria-invalid={Boolean(errors.password)}
               />
               <button
                 type="button"
                 className="password-toggle"
                 onClick={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
               >
-                {showPassword ? '🙈' : '👁'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
             {errors.password && <span className="form-error">{errors.password}</span>}
             {passwordStrength && (
               <>
-                <div className="password-strength">
-                  <div className={`password-strength-bar ${passwordStrength.colorClass}`} />
-                  <div className={`password-strength-bar ${passwordStrength.level === 'weak' || passwordStrength.level === 'fair' ? passwordStrength.colorClass : ''}`} />
-                  <div className={`password-strength-bar ${passwordStrength.level === 'good' || passwordStrength.level === 'strong' ? passwordStrength.colorClass : ''}`} />
-                  <div className={`password-strength-bar ${passwordStrength.level === 'strong' ? passwordStrength.colorClass : ''}`} />
+                <div className="password-strength" aria-label={`Password strength: ${passwordStrength.label}`} role="meter" aria-valuemin={0} aria-valuemax={5} aria-valuenow={passwordStrength.score}>
+                  {[0, 1, 2, 3, 4].map((index) => (
+                    <div key={index} className={`password-strength-bar ${index < passwordStrength.score ? passwordStrength.colorClass : ''}`} />
+                  ))}
                 </div>
                 <span className={`password-strength-text ${passwordStrength.colorClass}`}>
                   {passwordStrength.label}
@@ -240,29 +279,31 @@ const Register = () => {
                 onChange={handleChange}
                 placeholder="Re-enter your password"
                 autoComplete="new-password"
+                aria-invalid={Boolean(errors.confirmPassword)}
               />
               <button
                 type="button"
                 className="password-toggle"
                 onClick={() => setShowConfirmPassword((prev) => !prev)}
                 aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showConfirmPassword}
               >
-                {showConfirmPassword ? '🙈' : '👁'}
+                {showConfirmPassword ? 'Hide' : 'Show'}
               </button>
             </div>
             {errors.confirmPassword && <span className="form-error">{errors.confirmPassword}</span>}
           </div>
 
-<label className="checkbox-group">
+          <label className="checkbox-group">
             <input
               type="checkbox"
               name="agreeTerms"
               checked={formData.agreeTerms}
               onChange={handleChange}
+              aria-invalid={Boolean(errors.agreeTerms)}
             />
             <span className="checkbox-label">
-              I agree to the <a href="/terms">Terms of Service</a> and{' '}
-              <a href="/privacy">Privacy Policy</a>
+              I confirm that my information is accurate and agree to create an account.
             </span>
           </label>
           {errors.agreeTerms && <span className="form-error">{errors.agreeTerms}</span>}

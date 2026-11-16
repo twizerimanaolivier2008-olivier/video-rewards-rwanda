@@ -52,11 +52,9 @@ const Login = () => {
     setSubmitError('')
 
     try {
-      await login(formData.email, formData.password)
+      const user = await login(formData.email.trim(), formData.password, formData.rememberMe)
       success('Welcome back! Redirecting to dashboard...')
-      setTimeout(() => {
-        navigate('/dashboard')
-      }, 500)
+      navigate(user?.role === 'admin' ? '/admin' : '/dashboard', { replace: true })
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed. Please check your credentials.'
       setSubmitError(message)
@@ -68,14 +66,25 @@ const Login = () => {
 
   return (
     <div className="auth-page">
+      <section className="auth-story" aria-label="About Video Rewards Rwanda">
+        <span className="auth-eyebrow">Rewards that move with you</span>
+        <h2>Make every view count.</h2>
+        <p>Discover local stories, watch videos you enjoy, and keep track of the rewards you earn along the way.</p>
+        <ul className="auth-benefits">
+          <li><span className="auth-benefit-check" aria-hidden="true">✓</span>Watch featured videos at your pace</li>
+          <li><span className="auth-benefit-check" aria-hidden="true">✓</span>See your balance and activity in one place</li>
+          <li><span className="auth-benefit-check" aria-hidden="true">✓</span>Invite friends and follow your referrals</li>
+        </ul>
+      </section>
+
       <div className="auth-card">
         <div className="auth-header">
-          <div className="auth-logo">VR</div>
+          <div className="auth-brand"><div className="auth-logo">VR</div><span>Video Rewards Rwanda</span></div>
           <h1 className="auth-title">Welcome Back</h1>
-          <p className="auth-subtitle">Sign in to your Video Rewards Rwanda account</p>
+          <p className="auth-subtitle">Sign in to continue to your account.</p>
         </div>
 
-        {submitError && <div className="auth-error-banner">{submitError}</div>}
+        {submitError && <div className="auth-error-banner" role="alert">{submitError}</div>}
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <div className="form-group">
@@ -89,10 +98,12 @@ const Login = () => {
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="you@example.com or +250 788 123 456"
-                autoComplete="email"
+                autoComplete="username"
+                aria-invalid={Boolean(errors.email)}
+                aria-describedby={errors.email ? 'login-email-error' : undefined}
               />
             </div>
-            {errors.email && <span className="form-error">{errors.email}</span>}
+            {errors.email && <span className="form-error" id="login-email-error">{errors.email}</span>}
           </div>
 
           <div className="form-group">
@@ -107,20 +118,23 @@ const Login = () => {
                 onChange={handleChange}
                 placeholder="Enter your password"
                 autoComplete="current-password"
+                aria-invalid={Boolean(errors.password)}
+                aria-describedby={errors.password ? 'login-password-error' : undefined}
               />
               <button
                 type="button"
                 className="password-toggle"
                 onClick={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
               >
-                {showPassword ? '🙈' : '👁'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
-            {errors.password && <span className="form-error">{errors.password}</span>}
+            {errors.password && <span className="form-error" id="login-password-error">{errors.password}</span>}
           </div>
 
-          <div className="form-group" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="form-options">
             <label className="checkbox-group">
               <input
                 type="checkbox"

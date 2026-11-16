@@ -11,10 +11,16 @@ export const useAuth = () => {
       setLoading(false)
     }
     checkAuth()
+    window.addEventListener('auth-change', checkAuth)
+    window.addEventListener('storage', checkAuth)
+    return () => {
+      window.removeEventListener('auth-change', checkAuth)
+      window.removeEventListener('storage', checkAuth)
+    }
   }, [])
 
-  const handleLogin = async (email, password) => {
-    const user = await login(email, password)
+  const handleLogin = async (email, password, rememberMe = true) => {
+    const user = await login(email, password, rememberMe)
     setUser(user)
     return user
   }
