@@ -8,6 +8,7 @@ import referralRoutes from './src/routes/referrals.js';
 import adminRoutes from './src/routes/admin.js';
 import userRoutes from './src/routes/users.js';
 import { authenticateUser } from './src/middleware/auth.js';
+import pool from './src/config/db.js';
 
 dotenv.config();
 
@@ -17,8 +18,18 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Video Rewards Rwanda API is running' });
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', database: 'connected', message: 'Video Rewards Rwanda API is ready' });
+  } catch (error) {
+    console.error('Health check database error:', error.code || error.name);
+    res.status(503).json({
+      status: 'error',
+      database: 'unavailable',
+      message: 'MySQL is not reachable. Start MySQL and verify the backend database settings.',
+    });
+  }
 });
 
 app.use('/api/auth', authRoutes);

@@ -112,32 +112,33 @@ mysql -u root -p < database/schema.sql
 
 ### 2. Backend Setup
 
-```bash
-cd backend
-npm install
-cp .env.example .env
-# Edit .env with your database credentials and API keys
-npm run dev
+```powershell
+npm --prefix backend install
+Copy-Item backend\.env.example backend\.env
+# Edit backend\.env with your database credentials and API keys
+npm --prefix backend run dev
 ```
 
 The backend server will run on `http://localhost:5000`
 
 ### 3. Frontend Setup
 
-```bash
-cd frontend
-npm install
-npm run dev
+```powershell
+npm --prefix frontend install
+npm --prefix frontend run dev
 ```
 
-The frontend will run on `http://localhost:3000`
+Run the backend and frontend commands in separate terminals. The frontend will run on `http://localhost:3000`.
 
-### 4. Create Admin Account
+### 4. Create or Promote an Admin Account
 
-The database schema automatically creates a default admin user:
-- **Email**: admin@videorewards.rw
-- **Password**: admin123
-- **Phone**: +250780000000
+Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_PHONE` in the ignored `backend/.env` file, then run this command from the repository root:
+
+```bash
+npm --prefix backend run admin:setup
+```
+
+The setup command hashes the password and creates the admin account, or promotes an existing account with that email and updates its password. Keep real credentials out of source control. The database must be running and the schema must be imported first.
 
 ## Environment Variables
 
@@ -212,6 +213,9 @@ New users must pay 4,750 RWF to create a Premium account.
 - `GET /api/users/stats` - Get user dashboard stats
 - `GET /api/users/balance` - Get user balance
 - `GET /api/users/transactions` - Get user transactions
+
+### System
+- `GET /api/health` - Check API and database readiness
 
 ### Admin
 - `GET /api/admin/stats` - Get platform statistics

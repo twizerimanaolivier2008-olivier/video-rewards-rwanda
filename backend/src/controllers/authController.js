@@ -8,6 +8,15 @@ import ReferralEarning from '../models/ReferralEarning.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const REGISTRATION_FEE = 4750;
+const DATABASE_UNAVAILABLE_CODES = new Set([
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENOTFOUND',
+  'ER_ACCESS_DENIED_ERROR',
+  'ER_BAD_DB_ERROR',
+  'ER_NO_SUCH_TABLE',
+]);
 
 export const register = async (req, res) => {
   try {
@@ -93,6 +102,11 @@ export const register = async (req, res) => {
     res.status(201).json({ token, user: userWithoutPassword });
   } catch (error) {
     console.error('Register error:', error);
+    if (DATABASE_UNAVAILABLE_CODES.has(error.code)) {
+      return res.status(503).json({
+        message: 'Registration is temporarily unavailable because the database is not ready. Please try again later.',
+      });
+    }
     res.status(500).json({ message: 'Server error during registration' });
   }
 };

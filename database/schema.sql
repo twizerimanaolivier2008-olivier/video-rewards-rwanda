@@ -144,10 +144,6 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Insert default admin user (password: admin123)
-INSERT INTO users (first_name, last_name, email, phone_number, password_hash, role, account_type, is_verified, is_active)
-VALUES ('Admin', 'User', 'admin@videorewards.rw', '+250796915610', '$2a$10$rQ7y0Z9X8W7V6U5T4S3R2Q1P0O9N8M7L6K5J4H3G2F1E0D9C8B7A6Z', 'admin', 'premium', TRUE, TRUE);
-
 -- Insert default settings
 INSERT INTO settings (setting_key, setting_value, description)
 VALUES 
