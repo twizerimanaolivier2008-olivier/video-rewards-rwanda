@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import 'dotenv/config';
-import pool from '../config/db.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
 import ReferralEarning from '../models/ReferralEarning.js';
@@ -149,39 +148,6 @@ export const getProfile = async (req, res) => {
     res.json(userWithoutPassword);
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-export const updateProfile = async (req, res) => {
-  try {
-    const { first_name, last_name, email, phone_number } = req.body;
-    const userId = req.user.id;
-
-    if (email) {
-      const existingEmail = await User.findByEmail(email);
-      if (existingEmail && existingEmail.id !== userId) {
-        return res.status(400).json({ message: 'Email already in use' });
-      }
-    }
-
-    if (phone_number) {
-      const existingPhone = await User.findByPhone(phone_number);
-      if (existingPhone && existingPhone.id !== userId) {
-        return res.status(400).json({ message: 'Phone number already in use' });
-      }
-    }
-
-    await pool.query(
-      'UPDATE users SET first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name), email = COALESCE(?, email), phone_number = COALESCE(?, phone_number) WHERE id = ?',
-      [first_name, last_name, email, phone_number, userId]
-    );
-
-    const user = await User.findById(userId);
-    const { password_hash, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
-  } catch (error) {
-    console.error('Update profile error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

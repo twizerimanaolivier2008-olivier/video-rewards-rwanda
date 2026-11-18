@@ -110,6 +110,8 @@ video-rewards-rwanda/
 mysql -u root -p < database/schema.sql
 ```
 
+For an existing database, apply `database/migrations/002-add-account-security.sql` once before restarting the backend. Fresh database installations include the account security fields and code table in the schema.
+
 ### 2. Backend Setup
 
 ```powershell

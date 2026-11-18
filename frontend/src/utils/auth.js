@@ -4,6 +4,13 @@ const getStoredValue = (key) => localStorage.getItem(key) || sessionStorage.getI
 
 const notifyAuthChange = () => window.dispatchEvent(new Event('auth-change'))
 
+export const syncCurrentUser = (user) => {
+  const storage = localStorage.getItem('token') ? localStorage : sessionStorage
+  storage.setItem('user', JSON.stringify(user))
+  notifyAuthChange()
+  return user
+}
+
 const storeSession = (token, user, rememberMe = true) => {
   const storage = rememberMe ? localStorage : sessionStorage
   const otherStorage = rememberMe ? sessionStorage : localStorage
@@ -53,8 +60,5 @@ export const isAdmin = () => {
 export const updateProfile = async (data) => {
   const response = await api.put('/auth/profile', data)
   const user = response.data.user || response.data
-  const storage = localStorage.getItem('token') ? localStorage : sessionStorage
-  storage.setItem('user', JSON.stringify(user))
-  notifyAuthChange()
-  return user
+  return syncCurrentUser(user)
 }

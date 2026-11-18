@@ -6,7 +6,7 @@ const saltRounds = 10;
 const User = {
   async findById(id) {
     const [rows] = await pool.query(
-      'SELECT id, first_name, last_name, email, phone_number, role, account_type, referral_code, referred_by, points, balance, total_earned, total_withdrawn, is_verified, is_active, created_at FROM users WHERE id = ?',
+      'SELECT id, first_name, last_name, email, phone_number, profile_image_url, email_verified_at, role, account_type, referral_code, referred_by, points, balance, total_earned, total_withdrawn, is_verified, is_active, created_at FROM users WHERE id = ?',
       [id]
     );
     return rows[0] || null;

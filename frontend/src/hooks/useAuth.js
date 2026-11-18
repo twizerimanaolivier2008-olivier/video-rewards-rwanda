@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { login, register, logout, getCurrentUser, isAuthenticated, isAdmin, updateProfile } from '../utils/auth'
+import { login, register, logout, getCurrentUser, isAuthenticated, isAdmin, syncCurrentUser, updateProfile } from '../utils/auth'
 
 export const useAuth = () => {
   const [user, setUser] = useState(getCurrentUser())
@@ -42,6 +42,12 @@ export const useAuth = () => {
     return user
   }
 
+  const handleSyncUser = (user) => {
+    const updatedUser = syncCurrentUser(user)
+    setUser(updatedUser)
+    return updatedUser
+  }
+
   return {
     user,
     loading,
@@ -50,6 +56,7 @@ export const useAuth = () => {
     login: handleLogin,
     register: handleRegister,
     logout: handleLogout,
-    updateProfile: handleUpdateProfile
+    updateProfile: handleUpdateProfile,
+    syncUser: handleSyncUser
   }
 }
