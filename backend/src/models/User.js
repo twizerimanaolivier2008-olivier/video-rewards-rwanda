@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 
 const saltRounds = 10;
 
@@ -36,15 +37,19 @@ const User = {
     return rows[0] || null;
   },
 
-  async create(userData) {
+  async create(userData, executor = pool) {
     const { first_name, last_name, email, phone_number, password, account_type = 'free', referred_by } = userData;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
-    const referralCode = 'VR-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-    const [result] = await pool.query(
+    const referralCode = 'VR-' + randomBytes(5).toString('hex').toUpperCase();
+    const [result] = await executor.query(
       'INSERT INTO users (first_name, last_name, email, phone_number, password_hash, account_type, referral_code, referred_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [first_name, last_name, email, phone_number, hashedPassword, account_type, referralCode, referred_by || null]
     );
-    return this.findById(result.insertId);
+    const [rows] = await executor.query(
+      'SELECT id, first_name, last_name, email, phone_number, role, account_type, referral_code, referred_by, points, balance, total_earned, total_withdrawn, is_verified, is_active, created_at FROM users WHERE id = ?',
+      [result.insertId]
+    );
+    return rows[0] || null;
   },
 
   async updatePoints(id, points) {
