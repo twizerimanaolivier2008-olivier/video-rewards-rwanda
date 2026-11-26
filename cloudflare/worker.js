@@ -44,7 +44,11 @@ export default {
       const target = new URL(incoming.pathname + incoming.search, origin);
       const headers = new Headers(request.headers);
       headers.set("X-Forwarded-Host", incoming.host);
-      headers.set("X-Forwarded-Proto", "https");\n      // The incoming CF-Connecting-IP value is supplied by Cloudflare at the edge.\n      const clientIp = request.headers.get("CF-Connecting-IP");\n      if (clientIp) headers.set("X-Client-IP", clientIp);\n      else headers.delete("X-Client-IP");
+      headers.set("X-Forwarded-Proto", "https");
+      // The incoming CF-Connecting-IP value is supplied by Cloudflare at the edge.
+      const clientIp = request.headers.get("CF-Connecting-IP");
+      if (clientIp) headers.set("X-Client-IP", clientIp);
+      else headers.delete("X-Client-IP");
       const accessId = env.API_ACCESS_CLIENT_ID;
       const accessSecret = env.API_ACCESS_CLIENT_SECRET;
       if (Boolean(accessId) !== Boolean(accessSecret)) {
