@@ -6,7 +6,7 @@ import './Auth.css'
 
 const getPasswordStrength = (password) => {
   let score = 0
-  if (password.length >= 8) score++
+  if (password.length >= 12) score++
   if (/[A-Z]/.test(password)) score++
   if (/[a-z]/.test(password)) score++
   if (/[0-9]/.test(password)) score++
@@ -67,7 +67,7 @@ const Register = () => {
     if (!formData.password) {
       newErrors.password = 'Password is required'
     } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters'
+      newErrors.password = 'Password must be at least 12 characters'
     }
 
     if (formData.confirmPassword && formData.password !== formData.confirmPassword) {
@@ -238,7 +238,7 @@ const Register = () => {
                 className={`form-input ${errors.password ? 'error' : ''}`}
                 value={formData.password}
                 onChange={handleChange}
-                placeholder="At least 8 characters"
+                placeholder="At least 12 characters"
                 autoComplete="new-password"
                 aria-invalid={Boolean(errors.password)}
               />
