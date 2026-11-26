@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeMerkleRoot, hashTransactionPayload, verifyMerkleProof } from './merkle.js';
+import { buildMerkleProof, computeMerkleRoot, hashTransactionPayload, verifyMerkleProof } from './merkle.js';
 import { parseMinorUnits } from '../services/ledgerService.js';
 
 test('parseMinorUnits parses exact decimals without floating point', () => {
@@ -24,7 +24,7 @@ test('Merkle root is deterministic and changes when a leaf changes', () => {
   assert.notEqual(computeMerkleRoot([a, hashTransactionPayload('altered')]), root);
 });
 
-test('Merkle single-leaf root equals the leaf', () => {
+test('Transaction payload hashes are independent of object key order', () => {\n  assert.equal(hashTransactionPayload({ a: 1, b: 2 }), hashTransactionPayload({ b: 2, a: 1 }));\n});\n\ntest('Merkle single-leaf root equals the leaf', () => {
   const leaf = hashTransactionPayload('transaction-1');
   assert.equal(computeMerkleRoot([leaf]), leaf);
 });
@@ -41,7 +41,7 @@ test('Merkle proof verification checks left and right sibling ordering', () => {
   }), false);
 });
 
-test('Merkle utilities reject malformed inputs', () => {
+test('Merkle proof builder produces verifiable inclusion proofs for odd and even batches', () => {\n  const leaves = ['a', 'b', 'c'].map((x) => hashTransactionPayload(x));\n  for (let i = 0; i < leaves.length; i += 1) {\n    const item = buildMerkleProof(leaves, i);\n    assert.equal(verifyMerkleProof(item), true);\n  }\n});\n\ntest('Merkle utilities reject malformed inputs', () => {
   assert.throws(() => computeMerkleRoot([]), TypeError);
   assert.throws(() => computeMerkleRoot(['not-a-hash']), TypeError);
   assert.equal(verifyMerkleProof({ leaf: 'bad', proof: [], root: 'bad' }), false);
