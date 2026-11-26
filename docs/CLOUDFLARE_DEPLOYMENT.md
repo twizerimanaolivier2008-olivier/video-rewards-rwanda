@@ -16,12 +16,14 @@ This repository now includes a Cloudflare Worker for the Vite frontend and an AP
 2. Add these GitHub Actions repository secrets:
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
+   - `API_ORIGIN` (required HTTPS origin of the backend; no path/query)
+   - `API_ACCESS_CLIENT_ID` and `API_ACCESS_CLIENT_SECRET` (optional, recommended when protecting a Tunnel hostname with Cloudflare Access)
 3. Merge the deployment workflow to `main` only after the backend origin is ready. A push to `main` builds the frontend and deploys the Worker.
-4. Configure the Worker secret `API_ORIGIN` to the HTTPS origin of the Express backend. It must be an origin only, e.g. `https://api-origin.example.net`, with no path, query, username or password:
+4. Configure GitHub's `API_ORIGIN` secret to the HTTPS origin of the Express backend. The workflow copies it into the Worker as a secret during deployment. It must be an origin only, e.g. `https://api-origin.example.net`, with no path, query, username or password:
    ```sh
    npx wrangler secret put API_ORIGIN --config wrangler.jsonc
    ```
-5. Test `/api/health`, registration, login, profile, video, payment sandbox callbacks and admin authorization on staging before directing real users to the Worker.
+5. If the backend is behind Cloudflare Tunnel with Access, create a service token and add its client ID and secret as the two optional GitHub secrets above. The Worker injects those headers server-side; never expose them to the browser.\n6. Test `/api/health`, registration, login, profile, video, payment sandbox callbacks and admin authorization on staging before directing real users to the Worker.
 
 The Worker deliberately fails closed with HTTP 503 when `API_ORIGIN` is absent or invalid. It will not become an open proxy.
 
