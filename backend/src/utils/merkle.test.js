@@ -6,7 +6,7 @@ import {
   hashTransactionPayload,
   verifyMerkleProof,
 } from './merkle.js';
-import { parseMinorUnits } from '../services/ledgerService.js';
+import { parseMinorUnits } from './money.js';
 
 test('parseMinorUnits parses exact decimals without floating point', () => {
   assert.equal(parseMinorUnits('4750').toString(), '475000');
