@@ -101,6 +101,25 @@ const VideoPlayer = () => {
     // UI playback position is not treated as proof of earned watch time.
   }
 
+  const handleVideoEnded = async (event) => {
+    setPlaying(false)
+    if (!sessionToken) return
+    try {
+      const response = await api.post(`/videos/${id}/watch/progress`, {
+        sessionToken,
+        currentTimeSeconds: event.currentTarget.currentTime,
+      })
+      setWatchProgress(response.data.progressPercent || 0)
+      if (response.data.canClaimReward) {
+        setSessionMessage('Video finished. Your server-verified watch time qualifies; claim your reward.')
+      } else {
+        setSessionMessage('The server has not yet recorded enough watch time for this video.')
+      }
+    } catch (err) {
+      setSessionMessage(err.response?.data?.error || 'Could not record the final playback checkpoint.')
+    }
+  }
+
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
