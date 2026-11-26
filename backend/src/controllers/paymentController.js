@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { createHash } from 'node:crypto';
 import Withdrawal from '../models/Withdrawal.js';
 
 const PAYMENT_UNAVAILABLE = {
@@ -27,6 +28,10 @@ export const verifyAirtelPayment = async (req, res) =>
 export const requestWithdrawal = async (req, res) => {
   const { amount, payment_method, phone_number } = req.body || {};
   const amountText = String(amount ?? '');
+  const idempotencyKey = String(req.get('Idempotency-Key') || '');
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'A unique Idempotency-Key header (16-128 characters) is required.' });
+  }
   if (!/^\d{1,9}(?:\.\d{1,2})?$/.test(amountText)) {
     return res.status(400).json({ error: 'Enter a valid amount with at most two decimal places.' });
   }
@@ -35,16 +40,43 @@ export const requestWithdrawal = async (req, res) => {
     return res.status(400).json({ error: 'Withdrawal must be between 2,000 and 10,000,000 RWF.' });
   }
   if (!['mtn_momo', 'airtel_money'].includes(payment_method)) {
-    return res.status(400).json({ error: 'Choose a supported withdrawal method.' });
+    return res.status(400).json({ error: 'Choose MTN Mobile Money or Airtel Money.' });
   }
   const normalizedPhone = String(phone_number || '').trim();
   if (!/^[\d+()\s-]{7,20}$/.test(normalizedPhone)) {
     return res.status(400).json({ error: 'Enter a valid mobile-money phone number.' });
   }
 
+  const principalId = String(req.user.id);
+  const routeKey = 'payments:withdrawal';
+  const keyHash = createHash('sha256').update(idempotencyKey).digest('hex');
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+
+    const [saved] = await connection.query(
+      `SELECT response_status, response_json
+       FROM idempotency_keys
+       WHERE principal_id = ? AND route_key = ? AND key_hash = ?
+         AND expires_at > CURRENT_TIMESTAMP
+       FOR UPDATE`,
+      [principalId, routeKey, keyHash]
+    );
+    if (saved.length) {
+      const body = saved[0].response_json;
+      await connection.rollback();
+      if (!body) return res.status(409).json({ error: 'A request with this Idempotency-Key is still being processed.' });
+      const responseBody = typeof body === 'string' ? JSON.parse(body) : body;
+      return res.status(Number(saved[0].response_status) || 201).json(responseBody);
+    }
+
+    await connection.query(
+      `INSERT INTO idempotency_keys
+       (principal_id, route_key, key_hash, expires_at)
+       VALUES (?, ?, ?, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 48 HOUR))`,
+      [principalId, routeKey, keyHash]
+    );
+
     const [debit] = await connection.query(
       'UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?',
       [amountText, req.user.id, amountText]
@@ -67,27 +99,46 @@ export const requestWithdrawal = async (req, res) => {
        VALUES (?, 'withdrawal', ?, ?, 'pending', ?)`,
       [
         req.user.id,
-        -normalizedAmount,
+        `-${amountText}`,
         `Withdrawal request #${withdrawalId} via ${payment_method}`,
         `withdrawal:${withdrawalId}`,
       ]
     );
-    const [rows] = await connection.query('SELECT * FROM withdrawals WHERE id = ?', [withdrawalId]);
-    await connection.commit();
-    const withdrawal = rows[0];
-    return res.status(201).json({
+
+    const responseBody = {
       message: 'Withdrawal request submitted. Funds have been reserved while it is reviewed.',
       withdrawal: {
-        ...withdrawal,
-        paymentMethod: withdrawal.payment_method,
-        phoneNumber: withdrawal.phone_number,
-        userId: withdrawal.user_id,
-        createdAt: withdrawal.created_at,
-        updatedAt: withdrawal.updated_at,
+        id: withdrawalId,
+        amount: amountText,
+        paymentMethod: payment_method,
+        status: 'pending',
       },
-    });
+    };
+    await connection.query(
+      `UPDATE idempotency_keys
+       SET response_status = 201, response_json = ?
+       WHERE principal_id = ? AND route_key = ? AND key_hash = ?`,
+      [JSON.stringify(responseBody), principalId, routeKey, keyHash]
+    );
+    await connection.commit();
+    return res.status(201).json(responseBody);
   } catch (error) {
     await connection.rollback();
+    if (error.code === 'ER_DUP_ENTRY') {
+      try {
+        const [existing] = await connection.query(
+          'SELECT response_status, response_json FROM idempotency_keys WHERE principal_id = ? AND route_key = ? AND key_hash = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1',
+          [principalId, routeKey, keyHash]
+        );
+        const body = existing[0]?.response_json;
+        if (body) {
+          return res.status(Number(existing[0].response_status) || 201)
+            .json(typeof body === 'string' ? JSON.parse(body) : body);
+        }
+      } catch (lookupError) {
+        console.error('Withdrawal idempotency replay lookup failed:', lookupError.code || lookupError.name);
+      }
+    }
     console.error('Withdrawal request error:', error.code || error.name);
     return res.status(503).json({ error: 'Could not safely create the withdrawal request.' });
   } finally {
