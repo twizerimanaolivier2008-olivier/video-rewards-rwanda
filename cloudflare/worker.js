@@ -45,6 +45,18 @@ export default {
       const headers = new Headers(request.headers);
       headers.set("X-Forwarded-Host", incoming.host);
       headers.set("X-Forwarded-Proto", "https");
+      const accessId = env.API_ACCESS_CLIENT_ID;
+      const accessSecret = env.API_ACCESS_CLIENT_SECRET;
+      if (Boolean(accessId) !== Boolean(accessSecret)) {
+        return withHeaders(new Response(
+          JSON.stringify({ error: "API Access service token is incomplete." }),
+          { status: 503, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }
+        ), { "Cache-Control": "no-store" });
+      }
+      if (accessId && accessSecret) {
+        headers.set("CF-Access-Client-Id", accessId);
+        headers.set("CF-Access-Client-Secret", accessSecret);
+      }
       headers.delete("Host");
       const init = {
         method: request.method,
