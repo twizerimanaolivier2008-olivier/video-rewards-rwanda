@@ -19,8 +19,21 @@ export const useVideos = () => {
     }
   }
 
-  const watchVideo = async (videoId) => {
-    const response = await api.post(`/videos/${videoId}/watch`)
+  const startWatchSession = async (videoId) => {
+    const response = await api.post(`/videos/${videoId}/watch/start`)
+    return response.data
+  }
+
+  const recordWatchProgress = async (videoId, sessionToken, currentTimeSeconds) => {
+    const response = await api.post(`/videos/${videoId}/watch/progress`, {
+      sessionToken,
+      currentTimeSeconds,
+    })
+    return response.data
+  }
+
+  const watchVideo = async (videoId, sessionToken) => {
+    const response = await api.post(`/videos/${videoId}/watch/complete`, { sessionToken })
     return response.data
   }
 
@@ -39,6 +52,8 @@ export const useVideos = () => {
     error,
     fetchVideos,
     watchVideo,
+    startWatchSession,
+    recordWatchProgress,
     getWatchHistory
   }
 }
