@@ -71,7 +71,7 @@ const Withdrawals = () => {
       const res = await api.get('/payments/withdrawals')
       setWithdrawals(res.data.withdrawals || res.data)
     } catch (err) {
-      setSubmitError(err.response?.data?.message || 'Withdrawal request failed')
+      setSubmitError(err.response?.data?.error || err.response?.data?.message || 'Withdrawal request failed')
     } finally {
       setSubmitting(false)
     }
