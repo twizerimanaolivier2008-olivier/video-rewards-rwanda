@@ -5,7 +5,12 @@ import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
 import ReferralEarning from '../models/ReferralEarning.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET, 'utf8') < 32) {
+  throw new Error('JWT_SECRET must be configured with at least 32 bytes of random secret material.');
+}
+
+const JWT_OPTIONS = { expiresIn: '1h', algorithm: 'HS256', issuer: 'video-rewards-rwanda', audience: 'video-rewards-rwanda-api' };
 const REGISTRATION_FEE = 4750;
 const DATABASE_UNAVAILABLE_CODES = new Set([
   'ECONNREFUSED',
@@ -95,7 +100,7 @@ export const register = async (req, res) => {
       });
     }
 
-    const token = jwt.sign({ user_id: user.id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ user_id: user.id }, JWT_SECRET, JWT_OPTIONS);
 
     const { password_hash, ...userWithoutPassword } = user;
     res.status(201).json({ token, user: userWithoutPassword });
