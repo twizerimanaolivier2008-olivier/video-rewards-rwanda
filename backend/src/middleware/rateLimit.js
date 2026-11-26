@@ -1,5 +1,7 @@
 import { createHmac } from 'node:crypto';
 import pool from '../config/db.js';
+import { getWindowStart } from '../utils/rateLimitWindow.js';
+export { getWindowStart } from '../utils/rateLimitWindow.js';
 
 const HASH_SECRET = process.env.RATE_LIMIT_HASH_SECRET || process.env.JWT_SECRET;
 if (!HASH_SECRET || Buffer.byteLength(HASH_SECRET, 'utf8') < 32) {
@@ -8,9 +10,6 @@ if (!HASH_SECRET || Buffer.byteLength(HASH_SECRET, 'utf8') < 32) {
 
 export const hashClientIdentifier = (identifier) =>
   createHmac('sha256', HASH_SECRET).update(String(identifier || 'unknown')).digest('hex');
-
-export const getWindowStart = (nowMs, windowSeconds) =>
-  Math.floor(nowMs / (windowSeconds * 1000)) * windowSeconds;
 
 export const rateLimit = ({ scope, limit, windowSeconds = 60 }) => {
   if (!/^[a-z0-9:_-]{1,64}$/i.test(scope)) throw new Error('Invalid rate-limit scope.');
