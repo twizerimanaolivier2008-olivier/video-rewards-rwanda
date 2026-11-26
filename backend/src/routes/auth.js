@@ -11,9 +11,10 @@ import {
 } from '../controllers/accountController.js';
 import { authenticateUser } from '../middleware/auth.js';
 import { uploadAvatar } from '../middleware/avatarUpload.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
-router.post('/register', register);
-router.post('/login', login);
+router.post('/register', rateLimit({ scope: 'auth:register', limit: 5, windowSeconds: 900 }), register);
+router.post('/login', rateLimit({ scope: 'auth:login', limit: 8, windowSeconds: 900 }), login);
 router.get('/profile-photo/:filename', getProfilePhoto);
 router.get('/profile', authenticateUser, getProfile);
 router.post('/profile/verification-code', authenticateUser, requestProfileVerificationCodes);
