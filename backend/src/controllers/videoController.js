@@ -1,7 +1,5 @@
 import Video from '../models/Video.js';
 import VideoView from '../models/VideoView.js';
-import Transaction from '../models/Transaction.js';
-import User from '../models/User.js';
 
 const toCamelCase = (obj) => {
   const camelObj = {};
@@ -46,21 +44,21 @@ const toCamelCaseArray = (arr) => arr.map(toCamelCase);
 
 export const getAllVideos = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 12;
-    const category = req.query.category || null;
+    const rawPage = Number(req.query.page || 1);
+    const rawLimit = Number(req.query.limit || 12);
+    const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? Math.min(rawPage, 100000) : 1;
+    const limit = Number.isSafeInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 12;
+    const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 50) || null : null;
 
     const videos = await Video.findAll(page, limit, category);
-    const userId = req.user?.id;
+    const watchedIds = await VideoView.getWatchedVideoIds(req.user.id, videos.map((video) => video.id));
+    const watchedSet = new Set(watchedIds);
+    const videosWithStatus = videos.map((video) => ({
+      ...toCamelCase(video),
+      userWatched: watchedSet.has(Number(video.id)),
+    }));
 
-    const videosWithStatus = await Promise.all(
-      videos.map(async (video) => {
-        const hasWatched = await VideoView.hasWatched(userId, video.id);
-        return { ...toCamelCase(video), userWatched: hasWatched };
-      })
-    );
-
-    res.json(toCamelCaseArray(videosWithStatus));
+    res.json(videosWithStatus);
   } catch (error) {
     console.error('Get videos error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -82,78 +80,12 @@ export const getVideoById = async (req, res) => {
   }
 };
 
-export const watchVideo = async (req, res) => {
-  try {
-    const videoId = req.params.id;
-    const userId = req.user.id;
-    const watchDuration = parseInt(req.body.watch_duration) || 0;
-
-    const video = await Video.findById(videoId);
-    if (!video) {
-      return res.status(404).json({ message: 'Video not found' });
-    }
-
-    const alreadyWatched = await VideoView.hasWatched(userId, videoId);
-    if (alreadyWatched) {
-      return res.status(400).json({ message: 'You have already watched this video' });
-    }
-
-    const watchPercentage = (watchDuration / video.duration_seconds) * 100;
-    const minimumPercentage = 90;
-
-    let earnedPoints = 0;
-    let earnedAmount = 0.00;
-
-    if (watchPercentage >= minimumPercentage) {
-      earnedPoints = video.reward_points || 10;
-      earnedAmount = parseFloat(video.reward_amount) || 0.00;
-
-      await VideoView.create({
-        user_id: userId,
-        video_id: videoId,
-        watch_duration: watchDuration,
-        earned_points: earnedPoints,
-        earned_amount: earnedAmount
-      });
-
-      if (earnedPoints > 0) {
-        await User.updatePoints(userId, earnedPoints);
-      }
-      if (earnedAmount > 0) {
-        await User.updateBalance(userId, earnedAmount);
-      }
-
-      await Transaction.create({
-        user_id: userId,
-        type: 'video_reward',
-        amount: earnedAmount,
-        description: `Reward for watching: ${video.title}`,
-        status: 'completed'
-      });
-
-      await Video.incrementViews(videoId);
-    } else {
-      await VideoView.create({
-        user_id: userId,
-        video_id: videoId,
-        watch_duration: watchDuration,
-        earned_points: 0,
-        earned_amount: 0.00
-      });
-    }
-
-    res.json({
-      message: 'Video watch recorded',
-      watchPercentage: Math.round(watchPercentage),
-      earnedPoints: earnedPoints,
-      earnedAmount: earnedAmount,
-      completed: watchPercentage >= minimumPercentage
-    });
-  } catch (error) {
-    console.error('Watch video error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
+// Legacy client-timed reward claims are intentionally disabled. Rewards are
+// now issued only by videoWatchController after a server-timed watch session.
+export const watchVideo = async (req, res) => res.status(410).json({
+  error: 'Client-reported watch duration is no longer accepted. Start a server-timed watch session.',
+  code: 'WATCH_SESSION_REQUIRED',
+});
 
 export const getWatchHistory = async (req, res) => {
   try {
