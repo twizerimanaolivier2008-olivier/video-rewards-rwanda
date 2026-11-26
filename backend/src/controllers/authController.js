@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import 'dotenv/config';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
-import ReferralEarning from '../models/ReferralEarning.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET, 'utf8') < 32) {
@@ -71,34 +70,15 @@ export const register = async (req, res) => {
       referred_by
     });
 
+    // Registration is not proof of payment. Keep the fee pending and do not
+    // credit referral rewards until a trusted provider confirmation is implemented.
     await Transaction.create({
       user_id: user.id,
       type: 'registration',
       amount: REGISTRATION_FEE,
-      description: 'Premium account registration fee',
-      status: 'completed'
+      description: 'Registration fee awaiting verified payment-provider confirmation',
+      status: 'pending'
     });
-
-    if (referred_by) {
-      await ReferralEarning.create({
-        referrer_id: referred_by,
-        referee_id: user.id,
-        level: 1,
-        points_earned: 50,
-        amount_earned: 475.00
-      });
-
-      await User.updatePoints(referred_by, 50);
-      await User.updateBalance(referred_by, 475.00);
-
-      await Transaction.create({
-        user_id: referred_by,
-        type: 'referral_bonus',
-        amount: 475.00,
-        description: `Referral bonus for ${first_name} ${last_name}`,
-        status: 'completed'
-      });
-    }
 
     const token = jwt.sign({ user_id: user.id }, JWT_SECRET, JWT_OPTIONS);
 
