@@ -79,3 +79,58 @@ A domain has not been selected or purchased. The Worker can initially be tested 
 ## Rollback
 
 Keep the last known-good Worker deployment/version and deploy a previous Git commit to roll back frontend/edge changes. Database schema changes must be backward-compatible and independently reversible; never roll back financial data by overwriting live ledger rows.
+
+
+## Security and transaction features added on the implementation branch
+
+### Database migration 003
+
+Apply `database/migrations/003-production-ledger-security.sql` only after applying earlier migrations and taking a verified MySQL backup. This migration expects MySQL 8.0+ and creates:
+- MySQL-backed fixed-window API rate-limit buckets (registration, login, account verification, payment and watch endpoints).
+- Server-timed video watch sessions.
+- Withdrawal funds-reservation flag for safe balance reservation and release.
+- Double-entry ledger accounts, journals and entries, immutable-entry/journal triggers, plus an outbox.
+- Idempotency keys and structured admin audit logs.
+- Query indexes for transaction references and video catalogue filtering.
+
+The migration is one-time SQL, not automatically run by the application. Test it on a staging copy and confirm your database version before applying it to production. New login/registration throttles fail closed with HTTP 503 if the rate-limit table is missing.
+
+### Video reward verification
+
+The legacy `POST /api/videos/:id/watch` endpoint now returns HTTP 410. Use:
+- `POST /api/videos/:id/watch/start`
+- `POST /api/videos/:id/watch/progress`
+- `POST /api/videos/:id/watch/complete`
+
+The client receives a random one-time session token; only server-accounted elapsed playback time can be credited. Playback seeks and long pauses reset the progress baseline without crediting skipped time. This raises the bar against forged watch durations, but browser-side video playback cannot be treated as perfect proof of human attention.
+
+### Financial safeguards
+
+- New registrations create a pending registration-fee transaction; registration no longer marks that fee paid or pays referral rewards.
+- Client-provided MoMo/Airtel `status: SUCCESSFUL` values are rejected.
+- Payment initiation currently returns HTTP 503 until merchant API credentials, server-side transaction initiation and authenticated provider callbacks are implemented.
+- Withdrawal requests use a conditional database debit, reserve funds atomically, and require an `Idempotency-Key` header. Retrying the same request key replays the original response.
+- Admin withdrawal settlement runs in a database transaction, releases reserved funds on failure, increments withdrawn totals on completion, requires a payout reference and writes an audit record.
+- The ledger service enforces balanced debit/credit journals and stores integer minor units. It is a foundation; existing video/payment/referral flows are not yet all posting to it. Do not treat the new ledger tables as the authoritative balance until the remaining business operations are migrated and reconciled.
+
+### Blockchain primitives
+
+The backend now includes canonical transaction payload hashing, Merkle root computation, inclusion-proof generation and proof verification. These are primitives only. There is no configured chain, deployed anchor contract, signing key or automatic on-chain posting. Keep PII and payment details off-chain.
+
+### CI
+
+The GitHub Actions workflow builds the Vite frontend, stores a short-lived frontend build artifact, installs backend dependencies and runs Node.js built-in unit tests. A passing workflow verifies the current frontend build and pure unit tests; it does not certify payment-provider flows, a live MySQL integration, or a deployed service.
+
+## Cloudflare Pages status
+
+Cloudflare account API access did not allow provisioning a Pages project during this attempt (the Pages API returned an authentication error after a gateway timeout). No `pages.dev` URL has therefore been created or verified. The Pages Function at `frontend/functions/api/[[path]].js` is prepared to proxy same-origin `/api/*` requests once the Pages project is connected to this repository and its `API_ORIGIN` secret is configured.
+
+For the initial Pages build use:
+- Repository: `twizerimanaolivier2008-olivier/video-rewards-rwanda`
+- Production branch: `main`
+- Root directory: `/frontend`
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Pages Functions are provided under `frontend/functions`.
+
+Until a backend HTTPS origin is configured, the UI can render but account, video, balance, withdrawal and admin API features return a clear 503. Do not call this a fully working production deployment.
