@@ -20,7 +20,7 @@ export const rateLimit = ({ scope, limit, windowSeconds = 60 }) => {
     const now = Date.now();
     const windowStart = getWindowStart(now, windowSeconds);
     const windowEnd = windowStart + windowSeconds;
-    const clientHash = hashClientIdentifier(req.ip || req.socket?.remoteAddress || 'unknown');
+    // Trust X-Client-IP only when the API origin accepts requests exclusively from this Cloudflare edge proxy/Tunnel.\n    const clientIdentifier = req.get('X-Client-IP') || req.ip || req.socket?.remoteAddress || 'unknown';\n    const clientHash = hashClientIdentifier(clientIdentifier);
 
     try {
       await pool.query(
