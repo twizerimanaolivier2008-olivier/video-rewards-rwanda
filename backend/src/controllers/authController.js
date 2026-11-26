@@ -1,8 +1,8 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import 'dotenv/config';
+import pool from '../config/db.js';
 import User from '../models/User.js';
-import Transaction from '../models/Transaction.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || Buffer.byteLength(JWT_SECRET, 'utf8') < 32) {
@@ -80,24 +80,31 @@ export const register = async (req, res) => {
       referred_by = referrer.id;
     }
 
-    const user = await User.create({
-      first_name: normalizedFirstName,
-      last_name: normalizedLastName,
-      email: normalizedEmail,
-      phone_number: normalizedPhone,
-      password,
-      referred_by
-    });
-
-    // Registration is not proof of payment. Keep the fee pending and do not
-    // credit referral rewards until a trusted provider confirmation is implemented.
-    await Transaction.create({
-      user_id: user.id,
-      type: 'registration',
-      amount: REGISTRATION_FEE,
-      description: 'Registration fee awaiting verified payment-provider confirmation',
-      status: 'pending'
-    });
+    // Create the account and its pending registration obligation atomically.
+    // Referral rewards are withheld until a trusted provider confirms payment.
+    const connection = await pool.getConnection();
+    let user;
+    try {
+      await connection.beginTransaction();
+      user = await User.create({
+        first_name: normalizedFirstName,
+        last_name: normalizedLastName,
+        email: normalizedEmail,
+        phone_number: normalizedPhone,
+        password,
+        referred_by
+      }, connection);
+      await connection.query(
+        'INSERT INTO transactions (user_id, type, amount, description, status) VALUES (?, ?, ?, ?, ?)',
+        [user.id, 'registration', REGISTRATION_FEE, 'Registration fee awaiting verified payment-provider confirmation', 'pending']
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
 
     const token = jwt.sign({ user_id: user.id }, JWT_SECRET, JWT_OPTIONS);
 
