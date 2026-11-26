@@ -301,7 +301,7 @@ const VideoPlayer = () => {
             onTimeUpdate={handleTimeUpdate}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            onEnded={() => setPlaying(false)}
+            onEnded={handleVideoEnded}
             onRateChange={(event) => {
               if (event.currentTarget.playbackRate > 1.25) event.currentTarget.playbackRate = 1;
             }}
