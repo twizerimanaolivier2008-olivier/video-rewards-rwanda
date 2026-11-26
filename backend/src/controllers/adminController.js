@@ -167,34 +167,100 @@ export const getAllWithdrawals = async (req, res) => {
 };
 
 export const processWithdrawal = async (req, res) => {
+  const { id } = req.params;
+  const { status, reference } = req.body || {};
+  const processedBy = req.user.id;
+
+  if (!/^\d{1,10}$/.test(String(id))) {
+    return res.status(400).json({ error: 'Invalid withdrawal ID.' });
+  }
+  if (!['processing', 'completed', 'failed'].includes(status)) {
+    return res.status(400).json({ error: 'Choose processing, completed or failed.' });
+  }
+  const payoutReference = String(reference || '').trim();
+  if (status === 'completed' && (payoutReference.length < 3 || payoutReference.length > 100)) {
+    return res.status(400).json({ error: 'A verified provider payout reference is required to complete a withdrawal.' });
+  }
+
+  const connection = await pool.getConnection();
   try {
-    const { id } = req.params;
-    const { status, reference } = req.body;
-    const processedBy = req.user.id;
-
-    const withdrawal = await Withdrawal.updateStatus(id, status, processedBy);
-    if (reference) {
-      await pool.query('UPDATE withdrawals SET reference = ? WHERE id = ?', [reference, id]);
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      'SELECT * FROM withdrawals WHERE id = ? FOR UPDATE',
+      [id]
+    );
+    const withdrawal = rows[0];
+    if (!withdrawal) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Withdrawal not found.' });
+    }
+    if (!['pending', 'processing'].includes(withdrawal.status)) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This withdrawal has already reached a final state.' });
     }
 
+    const isReserved = Boolean(withdrawal.funds_reserved);
     if (status === 'completed') {
-      await User.updateWithdrawn(withdrawal.user_id, withdrawal.amount);
+      if (isReserved) {
+        await connection.query(
+          'UPDATE users SET total_withdrawn = total_withdrawn + ? WHERE id = ?',
+          [withdrawal.amount, withdrawal.user_id]
+        );
+      } else {
+        const [debit] = await connection.query(
+          'UPDATE users SET balance = balance - ?, total_withdrawn = total_withdrawn + ? WHERE id = ? AND balance >= ?',
+          [withdrawal.amount, withdrawal.amount, withdrawal.user_id, withdrawal.amount]
+        );
+        if (debit.affectedRows !== 1) throw new Error('Legacy withdrawal cannot be settled because the user balance is insufficient.');
+      }
+    } else if (status === 'failed' && isReserved) {
+      await connection.query(
+        'UPDATE users SET balance = balance + ? WHERE id = ?',
+        [withdrawal.amount, withdrawal.user_id]
+      );
     }
 
-    const camelCasedWithdrawal = {
-      ...withdrawal,
-      paymentMethod: withdrawal.payment_method,
-      phoneNumber: withdrawal.phone_number,
-      userId: withdrawal.user_id,
-      processedBy: withdrawal.processed_by,
-      createdAt: withdrawal.created_at,
-      updatedAt: withdrawal.updated_at
-    };
+    await connection.query(
+      `UPDATE withdrawals
+       SET status = ?, reference = COALESCE(?, reference),
+           funds_reserved = ?, processed_by = ?, processed_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [status, payoutReference || null, status === 'processing' ? isReserved : false, processedBy, id]
+    );
 
-    res.json({ message: 'Withdrawal updated successfully', withdrawal: camelCasedWithdrawal });
+    if (status !== 'processing') {
+      await connection.query(
+        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE payment_reference = ? AND user_id = ? AND type = ?',
+        [status, `withdrawal:${id}`, withdrawal.user_id, 'withdrawal']
+      );
+    }
+
+    await connection.query(
+      'INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?)',
+      [processedBy, `withdrawal:${status}`, 'withdrawal', String(id), JSON.stringify({ payoutReference: payoutReference || null })]
+    );
+
+    const [updatedRows] = await connection.query('SELECT * FROM withdrawals WHERE id = ?', [id]);
+    await connection.commit();
+    const updated = updatedRows[0];
+    return res.json({
+      message: `Withdrawal marked ${status}.`,
+      withdrawal: {
+        ...updated,
+        paymentMethod: updated.payment_method,
+        phoneNumber: updated.phone_number,
+        userId: updated.user_id,
+        processedBy: updated.processed_by,
+        createdAt: updated.created_at,
+        updatedAt: updated.updated_at,
+      },
+    });
   } catch (error) {
-    console.error('Process withdrawal error:', error);
-    res.status(500).json({ message: 'Server error' });
+    await connection.rollback();
+    console.error('Process withdrawal error:', error.code || error.name);
+    return res.status(503).json({ error: 'Could not safely update the withdrawal.' });
+  } finally {
+    connection.release();
   }
 };
 

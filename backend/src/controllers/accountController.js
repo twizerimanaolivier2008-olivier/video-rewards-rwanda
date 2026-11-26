@@ -178,8 +178,8 @@ export const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword) {
       throw new AccountSecurityError(400, 'Current and new passwords are required.')
     }
-    if (newPassword.length < 8) {
-      throw new AccountSecurityError(400, 'New password must be at least 8 characters.')
+    if (newPassword.length < 12) {
+      throw new AccountSecurityError(400, 'New password must be at least 12 characters.')
     }
     if (currentPassword === newPassword) {
       throw new AccountSecurityError(400, 'Choose a new password different from your current password.')

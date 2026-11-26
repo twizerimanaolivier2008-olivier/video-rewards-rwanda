@@ -1,0 +1,147 @@
+# Cloudflare deployment runbook
+
+This repository now includes a Cloudflare Worker for the Vite frontend and an API reverse proxy, a Wrangler configuration, a GitHub Actions deployment workflow, and a production Dockerfile for the existing Express API.
+
+## Current deployment boundary
+
+- The Worker serves the built React/Vite site from `frontend/dist`.
+- Requests to `/api/*` are proxied to the single HTTPS origin configured as the Worker secret `API_ORIGIN`.
+- The API origin must be the existing Express application running on a Node.js-compatible host. The Dockerfile is provided for a VPS or container host.
+- MySQL remains the authoritative database. Do not expose MySQL to the public internet.
+- No Cloudflare zone/domain, Hyperdrive configuration, R2 bucket, or backend origin was present in the connected Cloudflare account at the time this runbook was prepared. Existing Workers were left untouched.
+
+## Cloudflare account preparation
+
+1. In Cloudflare, create an API token scoped to the target account with permission to deploy Workers Scripts and edit Workers settings. Use a dedicated deployment token, not a Global API Key.
+2. Add these GitHub Actions repository secrets:
+   - `CLOUDFLARE_API_TOKEN`
+   - `CLOUDFLARE_ACCOUNT_ID`
+   - `API_ORIGIN` (required HTTPS origin of the backend; no path/query)
+   - `API_ACCESS_CLIENT_ID` and `API_ACCESS_CLIENT_SECRET` (optional, recommended when protecting a Tunnel hostname with Cloudflare Access)
+3. Merge the deployment workflow to `main` only after the backend origin is ready. A push to `main` builds the frontend and deploys the Worker.
+4. Configure GitHub's `API_ORIGIN` secret to the HTTPS origin of the Express backend. The workflow copies it into the Worker as a secret during deployment. It must be an origin only, e.g. `https://api-origin.example.net`, with no path, query, username or password:
+   ```sh
+   npx wrangler secret put API_ORIGIN --config wrangler.jsonc
+   ```
+5. If the backend is behind Cloudflare Tunnel with Access, create a service token and add its client ID and secret as the two optional GitHub secrets above. The Worker injects those headers server-side; never expose them to the browser.\n6. Test `/api/health`, registration, login, profile, video, payment sandbox callbacks and admin authorization on staging before directing real users to the Worker.
+
+The Worker deliberately fails closed with HTTP 503 when `API_ORIGIN` is absent or invalid. It will not become an open proxy.
+
+## Express backend host
+
+Build the container from the repository root:
+
+```sh
+docker build -f backend/Dockerfile -t video-rewards-rwanda-api ./backend
+```
+
+Run it with a managed secret store or environment variables supplied by the host. Required settings include:
+
+- `PORT=5000`
+- `NODE_ENV=production`
+- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- `JWT_SECRET` (random, high entropy; do not reuse a development secret)
+- `FRONTEND_URL` (the deployed Worker URL)
+- SMTP settings for account verification email
+- Payment-provider credentials only when the real provider integration has been implemented and verified
+
+Use a dedicated least-privilege MySQL user, TLS, network allowlisting/private connectivity, automated backups, and a tested restore process. Do not make port 3306 public. Persist `backend/src/uploads/avatars` on durable storage or migrate avatars to private object storage with authenticated delivery; container filesystems are ephemeral.
+
+Prefer Cloudflare Tunnel between a supported backend host and Cloudflare if you have a VPS with a stable running `cloudflared` connector. Otherwise use a managed Node.js host with HTTPS and restrict the origin to Cloudflare where the provider supports it. Do not expose a development server.
+
+## Existing application work still required before production
+
+This infrastructure scaffold is not a security certification and does not make unsafe financial flows safe. The following changes have now been committed on this branch: production database settings fail closed when credentials/TLS are missing or the database user is root; CORS uses an explicit frontend-origin allowlist; Express request sizes and basic security headers are constrained; JWTs require a strong configured secret, are signed/verified with a fixed algorithm, issuer and audience, and have a one-hour lifetime; authenticated requests no longer load password hashes. Existing seven-day JWTs will no longer validate after deployment, so users must sign in again. These are baseline improvements, not a complete security fix.\n\nThe current source still contains high-risk behavior:
+
+- MoMo/Airtel verification accepts client-supplied `status`; implement authenticated provider callbacks/server-to-server verification before granting paid status.
+- Withdrawals check balance and create records in separate operations; implement atomic reservations and idempotency.
+- Video reward eligibility trusts client-supplied watch duration; replace it with server-issued watch sessions and fraud controls.
+- JWT secret fallback exists in `authController.js`; remove it and fail startup when secrets are missing. Implement refresh-token rotation/revocation.
+- The MySQL pool defaults to root/empty password; fail closed in production and use least privilege.
+- Registration/referral/reward financial writes need atomic transactions and an immutable double-entry ledger.
+- Restrict CORS, add rate limits, request validation, security headers, admin MFA and structured redacted audit logs.
+- The backend currently stores avatars on local disk; use durable storage before multi-instance deployment.
+
+Do not accept real payments or enable production withdrawals until these items are addressed and tested.
+
+## Database and backups
+
+Keep the existing MySQL database for this rollout. Take a verified pre-migration backup, test restoration into a separate staging database, and run schema migrations through reviewed scripts. Cloudflare D1 Time Travel applies to D1 databases, not this existing MySQL database; it is not a MySQL backup solution.
+
+## Blockchain recommendation
+
+For the first release, keep MySQL as the authoritative double-entry ledger. After ledger correctness and provider reconciliation are implemented, batch finalized ledger-event hashes into a Merkle tree and anchor only the Merkle root, batch identifier and minimal metadata on an EVM-compatible low-fee network. Evaluate Base and Polygon using current fees, finality, availability and compliance needs at implementation time. Never publish names, phone numbers, email addresses, wallet secrets, balances or raw transaction details on-chain.
+
+## Domain
+
+A domain has not been selected or purchased. The Worker can initially be tested on the account's `workers.dev` hostname once deployed. Purchase and add the production domain to Cloudflare later, update DNS, configure the custom Worker domain, and set the API CORS allowlist to the exact frontend origin.
+
+## Rollback
+
+Keep the last known-good Worker deployment/version and deploy a previous Git commit to roll back frontend/edge changes. Database schema changes must be backward-compatible and independently reversible; never roll back financial data by overwriting live ledger rows.
+
+
+## Security and transaction features added on the implementation branch
+
+### Database migration 003
+
+Apply `database/migrations/003-production-ledger-security.sql` only after applying earlier migrations and taking a verified MySQL backup. This migration expects MySQL 8.0+ and creates:
+- MySQL-backed fixed-window API rate-limit buckets (registration, login, account verification, payment and watch endpoints).
+- Server-timed video watch sessions.
+- Withdrawal funds-reservation flag for safe balance reservation and release.
+- Double-entry ledger accounts, journals and entries, immutable-entry/journal triggers, plus an outbox.
+- Idempotency keys and structured admin audit logs.
+- Query indexes for transaction references and video catalogue filtering.
+
+The migration is one-time SQL, not automatically run by the application. Test it on a staging copy and confirm your database version before applying it to production. New login/registration throttles fail closed with HTTP 503 if the rate-limit table is missing.
+
+### Video reward verification
+
+The legacy `POST /api/videos/:id/watch` endpoint now returns HTTP 410. Use:
+- `POST /api/videos/:id/watch/start`
+- `POST /api/videos/:id/watch/progress`
+- `POST /api/videos/:id/watch/complete`
+
+The client receives a random one-time session token; only server-accounted elapsed playback time can be credited. Playback seeks and long pauses reset the progress baseline without crediting skipped time. This raises the bar against forged watch durations, but browser-side video playback cannot be treated as perfect proof of human attention.
+
+### Financial safeguards
+
+- New registrations create a pending registration-fee transaction; registration no longer marks that fee paid or pays referral rewards.
+- Client-provided MoMo/Airtel `status: SUCCESSFUL` values are rejected.
+- Payment initiation currently returns HTTP 503 until merchant API credentials, server-side transaction initiation and authenticated provider callbacks are implemented.
+- Withdrawal requests use a conditional database debit, reserve funds atomically, and require an `Idempotency-Key` header. Retrying the same request key replays the original response.
+- Admin withdrawal settlement runs in a database transaction, releases reserved funds on failure, increments withdrawn totals on completion, requires a payout reference and writes an audit record.
+- The ledger service enforces balanced debit/credit journals and stores integer minor units. It is a foundation; existing video/payment/referral flows are not yet all posting to it. Do not treat the new ledger tables as the authoritative balance until the remaining business operations are migrated and reconciled.
+
+### Blockchain primitives
+
+The backend now includes canonical transaction payload hashing, Merkle root computation, inclusion-proof generation and proof verification. These are primitives only. There is no configured chain, deployed anchor contract, signing key or automatic on-chain posting. Keep PII and payment details off-chain.
+
+### CI
+
+The GitHub Actions workflow builds the Vite frontend, stores a short-lived frontend build artifact, installs backend dependencies and runs Node.js built-in unit tests. A passing workflow verifies the current frontend build and pure unit tests; it does not certify payment-provider flows, a live MySQL integration, or a deployed service.
+
+## Cloudflare Pages status
+
+Cloudflare account API access did not allow provisioning a Pages project during this attempt (the Pages API returned an authentication error after a gateway timeout). No `pages.dev` URL has therefore been created or verified. The Pages Function at `frontend/functions/api/[[path]].js` is prepared to proxy same-origin `/api/*` requests once the Pages project is connected to this repository and its `API_ORIGIN` secret is configured.
+
+For the initial Pages build use:
+- Repository: `twizerimanaolivier2008-olivier/video-rewards-rwanda`
+- Production branch: `main`
+- Root directory: `/frontend`
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Pages Functions are provided under `frontend/functions`.
+
+Until a backend HTTPS origin is configured, the UI can render but account, video, balance, withdrawal and admin API features return a clear 503. Do not call this a fully working production deployment.
+
+
+## Forwarded client IP and origin trust boundary
+
+The Cloudflare Worker and Pages Function pass the Cloudflare-provided `CF-Connecting-IP` value to the backend as `X-Client-IP`. The database-backed rate limiter hashes that value so users behind the Cloudflare proxy do not all share the origin server's apparent address.
+
+This header is only trustworthy when the backend origin cannot be reached directly by untrusted clients. Put the API behind Cloudflare Tunnel with an Access service token, or restrict origin ingress to Cloudflare and the designated proxy. If the API is publicly reachable, a direct client could forge `X-Client-IP` and evade IP-based throttling. Do not publish the database port.
+
+## Current dependency audit notice
+
+The observed backend install reported 9 dependency audit findings (3 moderate, 5 high, 1 critical), and the frontend install reported 8 (3 moderate, 5 high). The backend dependency install also reported that the pinned Multer 1.x version is deprecated and affected by vulnerabilities addressed in Multer 2.x. These findings have not been remediated in this branch yet. Review `npm audit` output and upgrade/pin patched dependency versions with regression tests before production.

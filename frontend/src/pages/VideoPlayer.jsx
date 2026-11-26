@@ -11,7 +11,11 @@ const VideoPlayer = () => {
   const [loading, setLoading] = useState(true)
   const [watching, setWatching] = useState(false)
   const [watchProgress, setWatchProgress] = useState(0)
+  const [sessionToken, setSessionToken] = useState('')
+  const [playing, setPlaying] = useState(false)
+  const [sessionMessage, setSessionMessage] = useState('Start a secure watch session before playing to earn rewards.')
   const [relatedVideos, setRelatedVideos] = useState([])
+
   const playerRef = useRef(null)
 
   useEffect(() => {
@@ -41,21 +45,78 @@ const VideoPlayer = () => {
   const handleWatch = async () => {
     setWatching(true)
     try {
-      await watchVideo(id)
+      if (!sessionToken) {
+        const session = await api.post(`/videos/${id}/watch/start`)
+        setSessionToken(session.data.sessionToken)
+        setWatchProgress(0)
+        setSessionMessage('Secure session started. Play the video at normal speed; progress is checked by the server.')
+        return
+      }
+
+      if (watchProgress < 90) {
+        setSessionMessage('Keep the video playing. At least 90% of server-verified watch time is required.')
+        return
+      }
+
+      const result = await api.post(`/videos/${id}/watch/complete`, { sessionToken })
       setWatchProgress(100)
-      setTimeout(() => {
-        setWatching(false)
-        navigate('/dashboard')
-      }, 1500)
+      setSessionMessage(`Reward credited: ${result.data.earnedPoints} points and ${result.data.earnedAmount} RWF.`)
+      setTimeout(() => navigate('/dashboard'), 1500)
     } catch (err) {
+      const message = err.response?.data?.error || 'Could not process this watch session.'
+      setSessionMessage(message)
+    } finally {
       setWatching(false)
     }
   }
 
+  useEffect(() => {
+    if (!sessionToken || !playing) return undefined
+    let heartbeatInFlight = false
+    const sendHeartbeat = async () => {
+      const player = playerRef.current
+      if (!player || player.paused || player.seeking || document.visibilityState !== 'visible' || heartbeatInFlight) return
+      heartbeatInFlight = true
+      try {
+        const response = await api.post(`/videos/${id}/watch/progress`, {
+          sessionToken,
+          currentTimeSeconds: player.currentTime,
+        })
+        setWatchProgress(response.data.progressPercent || 0)
+        if (response.data.canClaimReward) {
+          setSessionMessage('You have enough verified watch time. Claim your reward.')
+        }
+      } catch (err) {
+        const message = err.response?.data?.error
+        if (message) setSessionMessage(message)
+      } finally {
+        heartbeatInFlight = false
+      }
+    }
+    const interval = window.setInterval(sendHeartbeat, 5000)
+    return () => window.clearInterval(interval)
+  }, [id, sessionToken, playing])
+
   const handleTimeUpdate = () => {
-    if (playerRef.current && video?.duration) {
-      const progress = (playerRef.current.currentTime / video.duration) * 100
-      setWatchProgress(Math.min(progress, 95))
+    // UI playback position is not treated as proof of earned watch time.
+  }
+
+  const handleVideoEnded = async (event) => {
+    setPlaying(false)
+    if (!sessionToken) return
+    try {
+      const response = await api.post(`/videos/${id}/watch/progress`, {
+        sessionToken,
+        currentTimeSeconds: event.currentTarget.currentTime,
+      })
+      setWatchProgress(response.data.progressPercent || 0)
+      if (response.data.canClaimReward) {
+        setSessionMessage('Video finished. Your server-verified watch time qualifies; claim your reward.')
+      } else {
+        setSessionMessage('The server has not yet recorded enough watch time for this video.')
+      }
+    } catch (err) {
+      setSessionMessage(err.response?.data?.error || 'Could not record the final playback checkpoint.')
     }
   }
 
@@ -257,7 +318,13 @@ const VideoPlayer = () => {
             style={styles.videoPlayer}
             controls
             onTimeUpdate={handleTimeUpdate}
-            onLoadedMetadata={() => setWatchProgress(0)}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={handleVideoEnded}
+            onRateChange={(event) => {
+              if (event.currentTarget.playbackRate > 1.25) event.currentTarget.playbackRate = 1;
+            }}
+            onLoadedMetadata={() => setPlaying(false)}
           />
         )}
         <div style={styles.progressBar}>
@@ -267,11 +334,9 @@ const VideoPlayer = () => {
 
       <div style={styles.layout}>
         <div>
-          {watching && (
-            <div style={styles.successMessage}>
-              ✓ Video watched! Rewards are being processed.
-            </div>
-          )}
+          <div style={styles.successMessage} role="status">
+            {sessionMessage}
+          </div>
 
           <div style={styles.videoInfo}>
             <h1 style={styles.videoTitle}>{video.title}</h1>
@@ -299,8 +364,12 @@ const VideoPlayer = () => {
             {watching
               ? 'Processing...'
               : watchProgress >= 100
-              ? '✓ Watched'
-              : '▶ Watch & Earn Points'}
+              ? '✓ Reward credited'
+              : !sessionToken
+              ? '▶ Start secure watch session'
+              : watchProgress >= 90
+              ? 'Claim reward'
+              : 'Keep watching to unlock reward'}
           </button>
         </div>
 

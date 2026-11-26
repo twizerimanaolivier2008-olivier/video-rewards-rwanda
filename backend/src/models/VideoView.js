@@ -41,6 +41,15 @@ const VideoView = {
     return rows;
   },
 
+  async getWatchedVideoIds(user_id, video_ids) {
+    if (!Array.isArray(video_ids) || video_ids.length === 0) return [];
+    const [rows] = await pool.query(
+      'SELECT video_id FROM video_views WHERE user_id = ? AND video_id IN (?)',
+      [user_id, video_ids]
+    );
+    return rows.map((row) => Number(row.video_id));
+  },
+
   async hasWatched(user_id, video_id) {
     const [rows] = await pool.query(
       'SELECT * FROM video_views WHERE user_id = ? AND video_id = ?',
