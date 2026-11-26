@@ -133,7 +133,7 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ user_id: user.id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ user_id: user.id }, JWT_SECRET, JWT_OPTIONS);
 
     const { password_hash, ...userWithoutPassword } = user;
     res.json({ token, user: userWithoutPassword });
