@@ -134,3 +134,14 @@ For the initial Pages build use:
 - Pages Functions are provided under `frontend/functions`.
 
 Until a backend HTTPS origin is configured, the UI can render but account, video, balance, withdrawal and admin API features return a clear 503. Do not call this a fully working production deployment.
+
+
+## Forwarded client IP and origin trust boundary
+
+The Cloudflare Worker and Pages Function pass the Cloudflare-provided `CF-Connecting-IP` value to the backend as `X-Client-IP`. The database-backed rate limiter hashes that value so users behind the Cloudflare proxy do not all share the origin server's apparent address.
+
+This header is only trustworthy when the backend origin cannot be reached directly by untrusted clients. Put the API behind Cloudflare Tunnel with an Access service token, or restrict origin ingress to Cloudflare and the designated proxy. If the API is publicly reachable, a direct client could forge `X-Client-IP` and evade IP-based throttling. Do not publish the database port.
+
+## Current dependency audit notice
+
+The observed backend install reported 9 dependency audit findings (3 moderate, 5 high, 1 critical), and the frontend install reported 8 (3 moderate, 5 high). The backend dependency install also reported that the pinned Multer 1.x version is deprecated and affected by vulnerabilities addressed in Multer 2.x. These findings have not been remediated in this branch yet. Review `npm audit` output and upgrade/pin patched dependency versions with regression tests before production.
