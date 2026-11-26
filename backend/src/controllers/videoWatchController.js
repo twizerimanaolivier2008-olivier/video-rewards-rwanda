@@ -17,7 +17,7 @@ export const startWatchSession = async (req, res) => {
       [req.params.id]
     );
     const video = videos[0];
-    if (!video || !video.is_active || Number(video.current_views) >= Number(video.max_views)) {
+    if (!video || !video.is_active || Number(video.duration_seconds) <= 0 || Number(video.current_views) >= Number(video.max_views)) {
       await connection.rollback();
       return res.status(404).json({ error: 'This video is not currently available.' });
     }
@@ -89,17 +89,26 @@ export const recordWatchProgress = async (req, res) => {
       await connection.rollback();
       return res.status(429).json({ error: 'Playback progress was submitted too quickly.' });
     }
-    if (elapsedMs > MAX_HEARTBEAT_GAP_MS) {
+    const positionMs = Math.round(currentTime * 1000);
+    if (positionMs > Number(session.duration_seconds) * 1000) {
       await connection.rollback();
-      return res.status(409).json({ error: 'Playback session paused. Resume watching and retry.' });
+      return res.status(400).json({ error: 'Playback position is outside the video duration.' });
     }
 
-    const positionMs = Math.round(currentTime * 1000);
     const deltaMs = positionMs - Number(session.last_position_ms);
-    if (positionMs > Number(session.duration_seconds) * 1000 ||
-        deltaMs < 0 || deltaMs > elapsedMs * 1.25 + 1500) {
-      await connection.rollback();
-      return res.status(409).json({ error: 'Playback position jumped unexpectedly. Seeked time does not earn rewards.' });
+    if (elapsedMs > MAX_HEARTBEAT_GAP_MS || deltaMs < 0 || deltaMs > elapsedMs * 1.25 + 1500) {
+      // A pause or seek resets the server's playback baseline but never grants
+      // the skipped interval. The viewer can continue from the new position.
+      await connection.query(
+        'UPDATE video_watch_sessions SET last_position_ms = ?, last_heartbeat_at_ms = ? WHERE id = ? AND completed_at_ms IS NULL',
+        [positionMs, now, session.id]
+      );
+      await connection.commit();
+      return res.status(409).json({
+        error: elapsedMs > MAX_HEARTBEAT_GAP_MS
+          ? 'Playback paused. Resume from here; paused time does not count.'
+          : 'Playback seek detected. Continue from here; seeked time does not count.',
+      });
     }
 
     const countedMs = Math.max(0, Math.min(deltaMs, elapsedMs));
