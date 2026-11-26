@@ -41,13 +41,32 @@ export const register = async (req, res) => {
     const last_name = ln || ln2;
     const phone_number = pn || phone2;
     const referral_code = rc || rc2;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedFirstName = String(first_name || '').trim();
+    const normalizedLastName = String(last_name || '').trim();
+    const normalizedPhone = String(phone_number || '').trim();
 
-    const existingUser = await User.findByEmail(email);
+    if (!normalizedFirstName || normalizedFirstName.length > 50 ||
+        !normalizedLastName || normalizedLastName.length > 50) {
+      return res.status(400).json({ message: 'Enter a valid first and last name.' });
+    }
+    if (!/^\\S+@\\S+\\.\\S+$/.test(normalizedEmail) || normalizedEmail.length > 100) {
+      return res.status(400).json({ message: 'Enter a valid email address.' });
+    }
+    if (!/^[\\d\\s+\\-()]{7,15}$/.test(normalizedPhone)) {
+      return res.status(400).json({ message: 'Enter a valid phone number.' });
+    }
+    if (typeof password !== 'string' || password.length < 12 ||
+        Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ message: 'Password must be at least 12 characters and no more than 72 UTF-8 bytes.' });
+    }
+
+    const existingUser = await User.findByEmail(normalizedEmail);
     if (existingUser) {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
-    const existingPhone = await User.findByPhone(phone_number);
+    const existingPhone = await User.findByPhone(normalizedPhone);
     if (existingPhone) {
       return res.status(400).json({ message: 'Phone number already registered' });
     }
@@ -62,10 +81,10 @@ export const register = async (req, res) => {
     }
 
     const user = await User.create({
-      first_name,
-      last_name,
-      email,
-      phone_number,
+      first_name: normalizedFirstName,
+      last_name: normalizedLastName,
+      email: normalizedEmail,
+      phone_number: normalizedPhone,
       password,
       referred_by
     });
