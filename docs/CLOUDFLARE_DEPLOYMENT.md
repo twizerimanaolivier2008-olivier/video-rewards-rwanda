@@ -49,7 +49,7 @@ Prefer Cloudflare Tunnel between a supported backend host and Cloudflare if you 
 
 ## Existing application work still required before production
 
-This infrastructure scaffold is not a security certification and does not make unsafe financial flows safe. The current source still contains high-risk behavior:
+This infrastructure scaffold is not a security certification and does not make unsafe financial flows safe. The following changes have now been committed on this branch: production database settings fail closed when credentials/TLS are missing or the database user is root; CORS uses an explicit frontend-origin allowlist; Express request sizes and basic security headers are constrained; JWTs require a strong configured secret, are signed/verified with a fixed algorithm, issuer and audience, and have a one-hour lifetime; authenticated requests no longer load password hashes. Existing seven-day JWTs will no longer validate after deployment, so users must sign in again. These are baseline improvements, not a complete security fix.\n\nThe current source still contains high-risk behavior:
 
 - MoMo/Airtel verification accepts client-supplied `status`; implement authenticated provider callbacks/server-to-server verification before granting paid status.
 - Withdrawals check balance and create records in separate operations; implement atomic reservations and idempotency.
