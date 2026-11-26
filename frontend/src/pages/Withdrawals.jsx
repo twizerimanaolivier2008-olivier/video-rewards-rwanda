@@ -9,10 +9,11 @@ const Withdrawals = () => {
   const [loading, setLoading] = useState(true)
   const [amount, setAmount] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('mobile_money')
+  const [paymentMethod, setPaymentMethod] = useState('mtn_momo')
   const [submitError, setSubmitError] = useState('')
   const [submitSuccess, setSubmitSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [idempotencyKey, setIdempotencyKey] = useState('')
 
   useEffect(() => {
     const fetchData = async () => {
@@ -52,15 +53,20 @@ const Withdrawals = () => {
     setSubmitting(true)
 
     try {
+      const requestKey = idempotencyKey || window.crypto.randomUUID()
+      if (!idempotencyKey) setIdempotencyKey(requestKey)
       await api.post('/payments/withdrawals', {
-        amount: parseFloat(amount),
-        phoneNumber,
-        paymentMethod,
+        amount,
+        phone_number: phoneNumber,
+        payment_method: paymentMethod,
+      }, {
+        headers: { 'Idempotency-Key': requestKey },
       })
-      setSubmitSuccess('Withdrawal request submitted successfully!')
+      setSubmitSuccess('Withdrawal request submitted. Your funds are reserved while the request is reviewed.')
       setAmount('')
       setPhoneNumber('')
-      setPaymentMethod('mobile_money')
+      setPaymentMethod('mtn_momo')
+      setIdempotencyKey('')
 
       const res = await api.get('/payments/withdrawals')
       setWithdrawals(res.data.withdrawals || res.data)
@@ -224,15 +230,15 @@ const Withdrawals = () => {
       fontSize: '0.8rem',
       fontWeight: '600',
       backgroundColor:
-        status === 'approved'
+        status === 'completed'
           ? '#f0fdf4'
           : status === 'pending'
           ? '#fef3c7'
-          : status === 'rejected'
+          : status === 'failed'
           ? '#fef2f2'
           : '#f3f4f6',
       color:
-        status === 'approved'
+        status === 'completed'
           ? '#15803d'
           : status === 'pending'
           ? '#92400e'
@@ -279,14 +285,14 @@ const Withdrawals = () => {
         </div>
         <div style={styles.balanceItem}>
           <div style={styles.balanceLabel}>Minimum Withdrawal</div>
-          <div style={styles.balanceValue}>1,000 RWF</div>
+          <div style={styles.balanceValue}>2,000 RWF</div>
         </div>
         <div style={styles.balanceItem}>
           <div style={styles.balanceLabel}>Total Withdrawn</div>
           <div style={styles.balanceValue}>
             {formatCurrency(
               withdrawals
-                .filter((w) => w.status === 'approved')
+                .filter((w) => w.status === 'completed')
                 .reduce((sum, w) => sum + (w.amount || 0), 0)
             )}
           </div>
@@ -294,7 +300,7 @@ const Withdrawals = () => {
       </div>
 
       <div style={styles.notice}>
-        Minimum withdrawal amount is 1,000 RWF. Funds are typically processed within 24 hours.
+        Minimum withdrawal amount is 2,000 RWF. Funds are reserved while your request is reviewed.
       </div>
 
       <div style={styles.formCard}>
@@ -308,12 +314,12 @@ const Withdrawals = () => {
             <label style={styles.label}>Amount (RWF)</label>
             <input
               type="number"
-              min="1000"
+              min="2000"
               step="100"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => { setAmount(e.target.value); setIdempotencyKey('') }}
               style={styles.input}
-              placeholder="Minimum 1,000 RWF"
+              placeholder="Minimum 2,000 RWF"
               required
             />
           </div>
@@ -322,7 +328,7 @@ const Withdrawals = () => {
             <input
               type="tel"
               value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
+              onChange={(e) => { setPhoneNumber(e.target.value); setIdempotencyKey('') }}
               style={styles.input}
               placeholder="+250 788 123 456"
               required
@@ -332,12 +338,11 @@ const Withdrawals = () => {
             <label style={styles.label}>Payment Method</label>
             <select
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
+              onChange={(e) => { setPaymentMethod(e.target.value); setIdempotencyKey('') }}
               style={styles.select}
             >
-              <option value="mobile_money">Mobile Money (MTN/Airtel)</option>
-              <option value="bank">Bank Transfer</option>
-              <option value="mpesa">M-Pesa</option>
+              <option value="mtn_momo">MTN Mobile Money</option>
+              <option value="airtel_money">Airtel Money</option>
             </select>
           </div>
           <button
